@@ -22,6 +22,13 @@ The examples assume an empty database. To start fresh, stop the API and delete t
 rm -f travel-billing.db travel-billing.db-wal travel-billing.db-shm
 ```
 
+## Tests
+
+```bash
+./mvnw test
+```
+Expected: `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`. The tests start the app on a random port with their own database (`target/test-travel-billing.db`), so `travel-billing.db` is not touched and the API does not need to be running.
+
 ## Transactions
 
 **Create the five seed transactions**
