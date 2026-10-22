@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.travelbilling.invoice.model.Invoice;
 import com.travelbilling.invoice.model.InvoiceLine;
+import com.travelbilling.invoice.model.InvoiceSummary;
 import com.travelbilling.shared.MoneyConverter;
 import com.travelbilling.transaction.model.FeeLine;
 import com.travelbilling.transaction.model.TaxLine;
@@ -45,6 +46,44 @@ public class InvoiceRepository {
                 invoice.createdAt().toString(),
                 invoice.updatedAt().toString());
         insertLinesAndRollups(invoice);
+    }
+
+    /** Replaces the invoice's snapshot: updates the header, then swaps all lines and rollups. Runs in one transaction. */
+    public void update(Invoice invoice) {
+        jdbc.update("""
+                UPDATE invoices SET currency = ?, total_cents = ?, updated_at = ? WHERE id = ?
+                """,
+                invoice.currency(),
+                MoneyConverter.toCents(invoice.totals().get("grand_total"), "grand_total"),
+                invoice.updatedAt().toString(),
+                invoice.id());
+        jdbc.update("DELETE FROM invoice_lines WHERE invoice_id = ?", invoice.id());
+        jdbc.update("DELETE FROM invoice_tax_rollup WHERE invoice_id = ?", invoice.id());
+        jdbc.update("DELETE FROM invoice_fee_rollup WHERE invoice_id = ?", invoice.id());
+        insertLinesAndRollups(invoice);
+    }
+
+    /** Deletes the invoice; ON DELETE CASCADE removes its lines and rollups. Transactions are not touched. */
+    public boolean delete(String id) {
+        return jdbc.update("DELETE FROM invoices WHERE id = ?", id) == 1;
+    }
+
+    /** Up to `limit` invoices with an id after `afterId` (null = from the start), in id order. Always bounded. */
+    public List<InvoiceSummary> findPage(String afterId, int limit) {
+        return jdbc.query("""
+                SELECT id, currency, total_cents, created_at, updated_at
+                FROM invoices
+                WHERE id > ?
+                ORDER BY id
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new InvoiceSummary(
+                        rs.getString("id"),
+                        rs.getString("currency"),
+                        MoneyConverter.fromCents(rs.getLong("total_cents")),
+                        Instant.parse(rs.getString("created_at")),
+                        Instant.parse(rs.getString("updated_at"))),
+                afterId == null ? "" : afterId, limit);
     }
 
     private void insertLinesAndRollups(Invoice invoice) {

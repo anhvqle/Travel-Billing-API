@@ -104,6 +104,25 @@ curl -s -o /dev/null -w "%{http_code}\n" -X DELETE localhost:8080/transactions/$
 ```
 Expected: `409` `{"error":"conflict","message":"transaction txn_... is on an invoice and cannot be changed"}`, then `409`.
 
+**List invoices**
+```bash
+curl -s "localhost:8080/invoices?limit=10" | jq
+```
+Expected: `200` `{"items":[{"id":"inv_...","currency":"EUR","total":685.70,...}],"limit":10}`
+
+**Update an invoice (rebuild it from a new set of transactions)**
+```bash
+curl -s -X PATCH localhost:8080/invoices/$INVOICE -H 'Content-Type: application/json' -d "{\"transaction_id\": \"$HOTEL\"}" | jq '.totals'
+```
+Expected: `200` `{"hotel": 331.70, "grand_total": 331.70}`. Mixed currencies return `409` and leave the invoice unchanged.
+
+**Delete an invoice (its transactions are kept)**
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X DELETE localhost:8080/invoices/$INVOICE
+curl -s localhost:8080/transactions/$HOTEL | jq '.external_id'
+```
+Expected: `204`, then `"hotel-LON-2026-03-11"`.
+
 ## Rules
 
 | Case | Response |

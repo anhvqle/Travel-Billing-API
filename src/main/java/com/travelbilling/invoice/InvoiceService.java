@@ -11,10 +11,13 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.travelbilling.invoice.model.Invoice;
 import com.travelbilling.invoice.model.InvoiceLine;
+import com.travelbilling.invoice.model.InvoiceSummary;
 import com.travelbilling.invoice.request.CreateInvoiceRequest;
 import com.travelbilling.shared.ConflictException;
 import com.travelbilling.shared.IdGenerator;
 import com.travelbilling.shared.NotFoundException;
+import com.travelbilling.shared.Page;
+import com.travelbilling.shared.Pagination;
 import com.travelbilling.shared.Validation;
 import com.travelbilling.shared.ValidationException;
 import com.travelbilling.transaction.TransactionService;
@@ -51,6 +54,32 @@ public class InvoiceService {
     public Invoice get(String id) {
         return repository.findById(id)
                 .orElseThrow(() -> new NotFoundException("invoice " + id + " not found"));
+    }
+
+    /**
+     * Rebuilds the invoice from the given transaction ids as they are stored now, in one database transaction.
+     * If anything is wrong (missing id, mixed currencies), nothing is written and the invoice stays as it was.
+     */
+    @Transactional
+    public Invoice update(String id, CreateInvoiceRequest request) {
+        Invoice current = get(id);
+        Invoice rebuilt = buildSnapshot(id, requestedIds(request), current.createdAt(), Instant.now());
+        repository.update(rebuilt);
+        return get(id);
+    }
+
+    /** Deletes the invoice and its snapshot. The transactions it billed are kept. */
+    @Transactional
+    public void delete(String id) {
+        if (!repository.delete(id)) {
+            throw new NotFoundException("invoice " + id + " not found");
+        }
+    }
+
+    /** One page of invoice summaries. A single bounded query, so it needs no database transaction. */
+    public Page<InvoiceSummary> list(Integer limit, String cursor) {
+        int pageSize = Pagination.validLimit(limit);
+        return Pagination.toPage(repository.findPage(cursor, pageSize + 1), pageSize, InvoiceSummary::id);
     }
 
     /** Loads the transactions, checks they share one currency, copies them into lines and adds them up. */
